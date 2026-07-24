@@ -1,0 +1,17 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": ["AGENTS.md"],
+  "plugin": ["./src/index.ts"],
+  "references": {
+    "opencode-upstream": {
+      "repository": "anomalyco/opencode",
+      "branch": "dev",
+      "description": "Use for current OpenCode plugin hooks, SDK contracts, lifecycle behavior, and attach CLI implementation"
+    },
+    "kitty-upstream": {
+      "repository": "kovidgoyal/kitty",
+      "branch": "master",
+      "description": "Use for Kitty remote-control protocol, launch targeting, authorization, and window lifecycle behavior"
+    }
+  }
+}
