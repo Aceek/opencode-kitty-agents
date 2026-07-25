@@ -7,10 +7,9 @@ Date: 2026-07-24
 The project is feasible and has a clean public-API implementation path. No
 oh-my-openagent source needs to be copied.
 
-One integration gate remains intentionally open: prove the Kitty capability
-channel from the actual OpenCode plugin runtime before implementing session
-auto-presentation. The current OpenCode process has Kitty environment metadata
-but no controlling `/dev/tty`, so direct terminal transport is unavailable.
+The integration gate passed through the background capability broker accepted
+in ADR 0004. The current OpenCode process has Kitty environment metadata but no
+controlling `/dev/tty`, so direct terminal transport remains unavailable.
 
 ## Verified OpenCode Contract
 
@@ -57,7 +56,10 @@ Verified against Kitty 0.47.4 CLI help and upstream documentation.
 - `--bias` controls the new split proportion.
 - `focus-window`, `close-window`, and `ls` operate on exact numeric IDs.
 - `close-window --ignore-no-match` supports idempotent cleanup.
-- `ls --match=id:<child>` supports manual-closure reconciliation.
+- A missing `ls --match=id:<child>` raises Kitty's no-match error rather than
+  returning `[]`. Because a managed child can move tabs, manual-closure
+  reconciliation uses a full non-mutating `ls` snapshot and retains only the
+  minimal numeric IDs needed for membership.
 - Process arguments, cwd, and environment can be supplied as distinct argv
   entries without a shell.
 - A Kitty `launch --allow-remote-control` window receives a dedicated
@@ -92,11 +94,11 @@ path. It does not disprove Kitty remote control through an inherited
   credentials to state files or logs.
 - Never invoke commands through a shell.
 
-## Remaining Gate
+## Capability Gate Result
 
-Before implementing automatic child presentation, add an integration probe that
-launches OpenCode from a Kitty mapping configured with window-local remote
-control and confirms from the server plugin runtime that it can:
+The background broker integration probe launched OpenCode from a Kitty mapping
+configured with window-local remote control and confirmed from the server
+plugin runtime that it could:
 
 1. query the exact origin window;
 2. launch a harmless short-lived split next to it;
@@ -105,9 +107,10 @@ control and confirms from the server plugin runtime that it can:
 5. close it idempotently;
 6. leave all unrelated Kitty windows unchanged.
 
-If Kitty does not preserve the socketpair descriptor into the OpenCode plugin
-runtime, stop and evaluate a small launcher/helper that owns the capability.
-Do not fall back to global remote control.
+Kitty preserved the descriptor into the background broker, Bun preserved it for
+`kitten` subprocesses through explicit same-number FD mapping, and the plugin
+reached the broker through a private runtime socket. Both test-created windows
+closed automatically, and unrelated windows remained unchanged.
 
 ## Feasibility Risks
 

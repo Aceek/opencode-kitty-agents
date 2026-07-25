@@ -1,6 +1,7 @@
 # V1 Implementation Plan
 
-Status: Ready after Gate 0
+Status: Gate 0 and Phases 1-4 complete; Phase 5 active-root scope validated,
+multi-child placement follow-up required
 
 Owner: Future implementation orchestrator
 
@@ -17,6 +18,9 @@ Owner: Future implementation orchestrator
 - Every major completed phase has a journal entry.
 
 ## Gate 0: Prove The Kitty Capability Path
+
+Completed 2026-07-24 through the background capability broker accepted in ADR
+0004. The sanitized live result confirmed all required operations and cleanup.
 
 1. Add a temporary or test-only plugin probe.
 2. Add a Kitty launch mapping that grants window-local remote control through
@@ -40,8 +44,7 @@ before introducing a helper or alternate transport.
    - split direction;
    - child bias;
    - reconciliation interval;
-   - focus policy;
-   - optional OpenCode executable override.
+    - focus policy.
 2. Define normalized child-session and presentation state.
 3. Define the minimal `PresentationAdapter` interface demanded by V1.
 4. Add validation and default tests.
@@ -49,6 +52,23 @@ before introducing a helper or alternate transport.
 6. Journal the phase.
 
 ## Phase 2: Kitty Client And Adapter
+
+Completed 2026-07-24 through the strict ADR 0004 broker boundary. The broker
+fixes the OpenCode executable at trusted construction time and never accepts an
+executable, environment, Kitty command, or match expression over IPC.
+Review corrections use full minimal-ID snapshots for missing-window detection
+and exact origin-tab snapshots for launch recovery, run OpenCode through a construction-time
+`/usr/bin/env -i` allowlist, retain startup shutdown signals, use source cwd for
+the orchestrator, and perform sequential bounded cleanup.
+The final Phase 2 review uses full minimal-ID snapshots for moved-window
+existence, runs marked recovery after runner rejection/timeout as well as bad
+stdout, contains disconnected socket responses, and applies one global cleanup
+deadline without increasing active close concurrency.
+The IPC timeout review derives a shared 60-second client/server default from the
+five-command bounded Kitty operation budget and rejects overlapping requests so
+queue wait cannot outlive the valid operation's transport.
+The disposal review drains already-started adapter requests before sending its
+single shutdown request, while rejecting any new work once disposal begins.
 
 1. Implement a subprocess runner using argv arrays and bounded timeouts.
 2. Implement capability availability checks without exposing capability values.
@@ -63,11 +83,43 @@ before introducing a helper or alternate transport.
 
 ## Phase 3: OpenCode Session Tracker
 
+Completed 2026-07-24. The default plugin installs a backend-neutral tracker with
+serialized event handling, authoritative SDK membership/status reconciliation,
+startup and periodic gap recovery, immutable snapshot subscriptions, contained
+failures, and bounded idempotent disposal. It does not construct or call a
+`PresentationAdapter`. Review corrections coalesce all reconciliation requests,
+bound and abort each SDK call through the verified top-level `{ signal }`
+option, prevent disposal-time late commits, and contain asynchronous subscriber
+rejections without blocking tracker mutation. ADR 0005 corrects the Phase 5
+scope failure: startup and periodic history publish no children until a live
+event selects an active orchestrator root, after which reconciliation retains
+only that root's immediate children. Root switches remove old membership and
+root deletion clears scope. Review corrections additionally restrict unknown
+status selection to exact listed roots and commit candidate root plus replacement
+membership/status atomically only after successful list and status snapshots.
+The same-root eligibility correction admits only children observed through live
+creation during this runtime or currently reported busy/retry by status
+authority, retaining admitted children through later idle/missing status and
+clearing eligibility on deletion or root switch. Historical list recency,
+unknown child status, and historical idle parentage alone are never selectors or
+presentation admission signals. A creation beneath a known or pending immediate
+child is a nested descendant, not a new root candidate. The final race correction uses a request-time
+scope generation so active/pending root deletion, or a different explicit root
+creation, invalidates in-flight SDK results before any serialized state commit
+or publication. Child deletion extends the same invalidation only when its exact
+`parentID` matches the active or pending root; foreign child deletion does not
+invalidate current reconciliation. Valid status for an ID not tracked as an
+active child conservatively invalidates in-flight work before authoritative
+root resolution, while known active-child status does not.
+
 1. Normalize `session.created`, `session.deleted`, and `session.status`.
 2. Serialize state transitions through one queue.
-3. Reconcile child membership through `session.list()` filtered by `parentID`.
+3. Reconcile child membership through `session.list()` filtered to the exact
+   live-event-selected active-root `parentID`; publish nothing before selection.
 4. Reconcile status through `session.status()`.
-5. Infer idle only for known existing children absent from the status map.
+5. Admit only live-created or authoritative busy/retry immediate children, then
+   retain their eligibility and infer idle when admitted children are absent
+   from the status map.
 6. Trigger reconciliation for unknown or out-of-order status events.
 7. Add periodic reconciliation to close the plugin initialization gap.
 8. Add tests for concurrent callbacks, duplicate events, deletion-before-open,
@@ -75,6 +127,19 @@ before introducing a helper or alternate transport.
 9. Journal the phase.
 
 ## Phase 4: Controller Integration
+
+Completed 2026-07-24. The backend-neutral controller serializes desired
+membership and adapter operations, uses the live server URL for a credential-
+free bounded health probe immediately before each exact attach request,
+coalesces periodic retries and exact-ID existence polling, and performs bounded
+idempotent cleanup before adapter/broker disposal. Manual closure receives one
+delayed replacement per tracked child lifetime; a second closure remains
+unavailable to avoid an intentional-close or immediate-exit loop. The default
+disabled plugin creates no runtime resources. Review corrections synchronously
+filter unrelated plugin events, validate the complete OpenCode health JSON
+inside the probe deadline, schedule replacement from existence-query
+completion, isolate plugin tests from real broker discovery, and apply one
+absolute controller disposal deadline with contained best-effort continuation.
 
 1. Connect tracker desired state to the adapter.
 2. Probe `ctx.serverUrl` immediately before attachment.
@@ -88,6 +153,13 @@ before introducing a helper or alternate transport.
 10. Journal the phase.
 
 ## Phase 5: End-To-End Verification
+
+The first live run opened historical project children. ADR 0005 and its
+tracker/controller regressions corrected that scope failure. A later focused
+live rerun from the repository working directory opened exactly the two newly
+created child sessions and no historical children. Its three-column result was
+too narrow to accept as a readable multi-child arrangement, so placement design
+and focused verification remain required before broader lifecycle scenarios.
 
 1. Start OpenCode through the trusted Kitty launch path.
 2. Create one synchronous child session and one background child session.

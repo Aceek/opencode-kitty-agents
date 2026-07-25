@@ -19,6 +19,9 @@
     "README.md",
     "LICENSE"
   ],
+  "bin": {
+    "opencode-kitty-agents-broker": "./dist/broker/main.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -27,9 +30,10 @@
   },
   "scripts": {
     "build": "tsc",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p tsconfig.gate0.json",
     "test": "bun test",
-    "check": "bun run typecheck && bun test && bun run build"
+    "check": "bun run typecheck && bun test && bun run build",
+    "gate0:result": "bun test/gate0/read-result.ts"
   },
   "peerDependencies": {
     "@opencode-ai/plugin": ">=1.18.4"

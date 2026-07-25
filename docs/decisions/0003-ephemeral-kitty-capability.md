@@ -1,6 +1,6 @@
 # ADR 0003: Use An Ephemeral Kitty Capability
 
-Status: Accepted with implementation gate
+Status: Superseded by ADR 0004
 
 Date: 2026-07-24
 
@@ -18,7 +18,8 @@ OpenCode without creating a global filesystem or TCP listener.
 
 Use the inherited ephemeral Kitty capability for V1. Keep global remote control
 disabled. Restrict authorized commands to the final minimum required by the
-adapter.
+adapter. ADR 0004 supersedes direct plugin ownership with a background broker
+because Kitty only gives the descriptor to background launches.
 
 Before implementation proceeds beyond a probe, verify that the descriptor is
 preserved into the real OpenCode server-plugin runtime.
