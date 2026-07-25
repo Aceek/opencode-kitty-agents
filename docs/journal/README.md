@@ -74,3 +74,4 @@ handoffs, and recovery after interruption.
 - `2026-07-25-01-orchestration-handover.md`
 - `2026-07-25-02-phase-5-active-root-live-rerun.md`
 - `2026-07-25-03-nested-child-scope-correction.md`
+- `2026-07-25-04-clean-checkpoint-handover.md`

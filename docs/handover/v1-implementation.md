@@ -2,6 +2,28 @@
 
 Date: 2026-07-25
 
+## Post-Checkpoint Resume Update
+
+The prior orchestration was checkpointed into two commits:
+
+- `3b04844 feat: implement secure Kitty agent presentation`
+- `723303a docs: record V1 milestones and live verification`
+
+The worktree was clean after those commits. The focused Phase 5 rerun has now
+live-validated ADR 0005: a fresh orchestrator started from this repository did
+not open historical children, and exactly two newly created child sessions
+opened exactly two managed presentations. The first manual closure received the
+intended single replacement. The remaining user-visible defect is layout
+quality: three equal vertical columns are too narrow to be accepted as a
+readable multi-child arrangement.
+
+Begin the next orchestration by reading this handover and the journal in the
+mandatory order. Do not rerun a desktop test or change Kitty configuration
+before first researching, designing, and testing a deterministic readable
+multi-child placement policy. The next live test must start its source Kitty
+terminal in `/home/aceek/projects/opencode-kitty-agents`; starting from another
+directory does not load this repository's project plugin configuration.
+
 ## Resume This Orchestration
 
 - OpenCode session: `ses_06c8943b6ffe6IyyU43H5vr3nY`
@@ -79,10 +101,10 @@ authoritative. Revalidate undocumented assumptions with focused tests.
 - Branch: `main`
 - Core V1 implementation checkpoint: `3b04844`
   (`feat: implement secure Kitty agent presentation`)
-- The subsequent journal and handover checkpoint records the verified Phase 5
-  active-root rerun and nested-child scope correction.
-- No commit has been pushed. Do not discard, reset, clean, or overwrite later
-  worktree changes.
+- Milestone/journal checkpoint: `723303a`
+  (`docs: record V1 milestones and live verification`)
+- No commit has been pushed. Inspect `git status --short` before modifying any
+  file; never discard, reset, clean, or overwrite later worktree changes.
 
 Use `git status --short` immediately after resuming and preserve every existing
 change. The repository guide requires a full diff review before any future
