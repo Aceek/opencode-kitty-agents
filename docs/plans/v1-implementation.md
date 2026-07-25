@@ -206,6 +206,7 @@ gate is live-validated, while broader placement scenarios remain pending.
 - Hyprland OS-window backend.
 - tmux or WezTerm backend.
 - Dynamic backend discovery.
-- Automatic Kitty layout switching.
+- Automatic Kitty layout switching by the plugin or broker. The user-invoked
+  launcher exception is defined in ADR 0006.
 - Persisted cross-restart window recovery.
 - Destructive session controls.

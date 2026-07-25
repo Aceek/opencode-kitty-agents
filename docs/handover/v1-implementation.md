@@ -325,23 +325,24 @@ successful open now remains closed for that membership lifetime. Broader
   `2026-07-25-06-live-placement-and-close-policy.md` for the implementation,
   live result, and controller-policy correction.
 
-## Temporary Kitty Test Configuration
+## Local Kitty Launcher Configuration
 
-The following temporary mappings still exist in
+The user-approved local launcher is installed in
 `/home/aceek/.config/kitty/kitty.conf`:
 
 ```conf
-map ctrl+shift+f11 goto_layout splits
-map ctrl+shift+f12 launch --type=background --allow-remote-control --remote-control-password '!' --remote-control-password '"" ls launch focus-window close-window' /home/aceek/.bun/bin/bun /home/aceek/projects/opencode-kitty-agents/dist/broker/main.js @active-kitty-window-id
+map ctrl+shift+o combine : goto_layout splits : launch --type=background --env=PATH=/home/aceek/.bun/bin:/usr/local/bin:/usr/bin:/bin --allow-remote-control --remote-control-password '!' --remote-control-password '"" ls launch focus-window close-window' /home/aceek/.npm-global/bin/opencode-kitty-agents-broker @active-kitty-window-id
 ```
 
-They are test setup, not final documented production configuration. Global
-remote control remains disabled. Do not broaden the allowlist. Keep the `!`
-policy that disables global password fallthrough.
+It is a local V1 setup, not a published release guarantee. Global remote
+control remains disabled. Do not broaden the allowlist. Keep the `!` policy
+that disables global password fallthrough. ADR 0006 limits the automatic
+`splits` selection to this explicit user-invoked mapping; the broker remains
+unable to change layouts.
 
 The user explicitly used a separate Kitty terminal/window for live testing.
-Coordinate before causing visible desktop changes. Remove both mappings and
-reload Kitty after Phase 5 is complete, then record the removal.
+Coordinate before causing visible desktop changes. If the mapping is removed,
+reload Kitty and record the rollback.
 
 At handoff, no process matching the production broker path was active. Do not
 kill OpenCode processes in bulk; several unrelated instances may exist. For test
@@ -411,7 +412,8 @@ scenario until these remaining tests pass.
    children.
 4. Document minimal-environment authentication limitations if live testing
    confirms any.
-5. Remove temporary F11/F12 mappings, reload Kitty, and verify removal.
+5. Recheck the documented local launcher and rollback instructions after the
+   remaining Phase 5 scenarios pass.
 6. Inspect package contents and isolated consumer import.
 7. Run a clean-install/check/tarball verification.
 8. Perform a final independent security/lifecycle review of the complete diff.

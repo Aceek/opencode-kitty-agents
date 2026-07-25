@@ -16,7 +16,8 @@ returns no hooks and creates no tracker, controller, timer, adapter, or broker
 client resources. A focused Phase 5 live test confirmed startup opens the
 orchestrator alone, with no historical children; two simultaneous live agents
 opened exactly two readable, correctly positioned child splits. Broader
-lifecycle scenarios and final user setup remain incomplete. That live test also
+lifecycle scenarios and release readiness remain incomplete; a local
+single-shortcut setup is documented below. That live test also
 exposed the old delayed-replacement behavior when both splits were manually
 closed; the corrected policy is close means close.
 
@@ -114,8 +115,9 @@ V1 keeps global Kitty remote control disabled. Gate 0 proved the accepted ADR
 0004 background capability-broker path, and Phase 2 implements that production
 boundary. The broker owns the inherited descriptor, preserves its FD explicitly
 for bounded `kitten` subprocesses, and uses only `ls`, `launch`, `focus-window`,
-and `close-window` with `--use-password=never`. The final launch mapping and
-user setup remain intentionally undocumented until end-to-end integration.
+and `close-window` with `--use-password=never`. The local V1 launch mapping and
+user setup are documented below; end-to-end release readiness remains
+incomplete.
 
 Existence reconciliation uses a full non-mutating Kitty `ls` snapshot because a
 managed window can be moved out of the origin tab and exact missing-window
@@ -243,6 +245,51 @@ disposal is always invoked, but if the global deadline has expired the
 controller returns while the already-contained adapter/broker cleanup continues
 best effort under its own bounds. Session deletion and every cleanup path only
 close presentation handles; they never delete an OpenCode session.
+
+## Local Launcher (Current User Setup)
+
+The package is not published. To use this checkout locally, install its broker
+binary without publishing anything:
+
+```bash
+cd /home/aceek/projects/opencode-kitty-agents
+bun install
+bun run check
+npm link
+```
+
+Add this one mapping to `~/.config/kitty/kitty.conf`, using the executable path
+printed by `command -v opencode-kitty-agents-broker` after the local link:
+
+```conf
+map ctrl+shift+o combine : goto_layout splits : launch --type=background --env=PATH=/home/aceek/.bun/bin:/usr/local/bin:/usr/bin:/bin --allow-remote-control --remote-control-password '!' --remote-control-password '"" ls launch focus-window close-window' /home/aceek/.npm-global/bin/opencode-kitty-agents-broker @active-kitty-window-id
+```
+
+Reload Kitty after the edit:
+
+```bash
+kill -USR1 "$KITTY_PID"
+```
+
+From a Kitty tab in the project directory, press **Ctrl+Shift+O**. The shortcut
+deliberately changes that tab to `splits`, starts the OpenCode orchestrator,
+and permits the plugin to present eligible immediate child sessions. A normal
+`opencode` command cannot acquire this private Kitty capability after startup.
+
+The mapping grants no global remote control. The background broker receives a
+window-local capability restricted to `ls`, `launch`, `focus-window`, and
+`close-window`; child agent windows never receive it. To roll back, remove the
+mapping and reload Kitty. This affects presentation only and never deletes an
+OpenCode session.
+
+The explicit `PATH` is only for the background broker process: the linked entry
+uses `#!/usr/bin/env bun`, and a desktop-started Kitty server may not otherwise
+have Bun in its path. Keep the listed path minimal and adjust only the Bun
+directory if your installation differs.
+
+The focused two-child placement gate passed, but broader Phase 5 lifecycle
+scenarios remain outstanding. Treat this as a local V1 setup, not a published
+release guarantee.
 
 ## Development
 
