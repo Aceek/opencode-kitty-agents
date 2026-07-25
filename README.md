@@ -13,9 +13,12 @@ bounded Kitty subprocess boundary, capability broker, and broker-backed Kitty
 children of the active orchestrator root and presents them through the
 broker-backed adapter. `enabled: false`
 returns no hooks and creates no tracker, controller, timer, adapter, or broker
-client resources. Phase 5 live verification and final user setup remain
-halted after exposing and correcting the historical-session scope failure; live
-execution was not continued as part of the fix.
+client resources. A focused Phase 5 live test confirmed startup opens the
+orchestrator alone, with no historical children; two simultaneous live agents
+opened exactly two readable, correctly positioned child splits. Broader
+lifecycle scenarios and final user setup remain incomplete. That live test also
+exposed the old delayed-replacement behavior when both splits were manually
+closed; the corrected policy is close means close.
 
 The verified target environment is:
 
@@ -78,7 +81,7 @@ All fields are optional. Unknown fields and invalid values are rejected.
 | --- | --- | --- |
 | `enabled` | `true` | Boolean |
 | `splitDirection` | `"vertical"` | `"vertical"` or `"horizontal"` |
-| `childBias` | `40` | Finite percentage from `1` through `99` |
+| `childBias` | `40` | Finite percentage from `1` through `99`; first child-region share |
 | `reconciliationIntervalMs` | `5000` | Safe integer of at least `1000` milliseconds |
 | `focusPolicy` | `"preserve"` | `"preserve"` or `"child"` |
 
@@ -87,6 +90,13 @@ it is never accepted in an `open` request. The broker executable has a default
 of `/usr/bin/opencode` and a construction-time `--opencode-executable=...`
 override. No executable, Kitty command, match expression, or environment map
 crosses the broker IPC boundary.
+
+`childBias` applies only to the first live child in the orchestrator tab: it is
+placed beside the exact orchestrator in the configured split orientation. Later
+children use an opposite-orientation balanced (`50`) subdivision within the
+managed child area, selected deterministically from currently co-tabbed managed
+window dimensions. The focused two-child placement scenario is live-validated;
+broader placement and lifecycle scenarios remain to be exercised.
 
 Both the orchestrator and attached clients run through `/usr/bin/env -i` with a
 construction-time allowlist: terminal color metadata, `HOME`, `PATH`, locale,
@@ -216,13 +226,16 @@ explicitly when configured.
 
 Unavailable servers, layouts, brokers, and failed opens retry at most once per
 configured reconciliation interval. Managed numeric window IDs are polled at
-that interval; event snapshot traffic cannot accelerate existence checks. A
-manual closure receives one delayed automatic replacement attempt during that
-child's tracked lifetime. Its delay starts when the exact-ID existence query
-finishes, not when maintenance began. If the replacement also disappears, the
-controller leaves it unavailable until the child leaves and is discovered
-again. This prevents an intentional close or immediate-exit loop from
-repeatedly opening windows.
+that interval; event snapshot traffic cannot accelerate existence checks. Once
+a successful presentation is later absent, **close means close**: the controller
+clears its handle, records `window-closed`, and does not reopen it for that child
+membership lifetime. This intentionally treats manual closure and immediate
+attach-client exit identically. Authoritative membership removal followed by a
+later re-add creates a fresh lifetime that may open normally. An `exists()`
+failure retains its handle and continues periodic probing. Controller snapshots
+report `desired: "closed"` for this suppressed state and `desired: "open"`
+otherwise. The deprecated `manualReopenAttempts` snapshot field remains at `0`
+for source compatibility.
 
 Disposal is idempotent and uses one absolute 65-second controller deadline
 across queue drain, serial known-handle cleanup, and adapter disposal. Adapter

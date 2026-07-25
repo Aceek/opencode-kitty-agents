@@ -75,3 +75,5 @@ handoffs, and recovery after interruption.
 - `2026-07-25-02-phase-5-active-root-live-rerun.md`
 - `2026-07-25-03-nested-child-scope-correction.md`
 - `2026-07-25-04-clean-checkpoint-handover.md`
+- `2026-07-25-05-readable-multi-child-placement.md`
+- `2026-07-25-06-live-placement-and-close-policy.md`

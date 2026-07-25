@@ -580,7 +580,7 @@ describe("presentation controller", () => {
     await controller.dispose()
   })
 
-  test("manual closure gets exactly one delayed automatic replacement", async () => {
+  test("manual disappearance never reopens across timer ticks and snapshot updates", async () => {
     let now = 0
     const adapter = new FakeAdapter()
     const { tracker, scheduler, controller } = setup({ adapter, now: () => now })
@@ -590,22 +590,24 @@ describe("presentation controller", () => {
     scheduler.tick()
     await controller.ready()
     expect(adapter.opens).toHaveLength(1)
-    expect(controller.snapshot()[0]).toMatchObject({ manualReopenAttempts: 1, state: { phase: "unavailable" } })
-    now = 1_000
+    expect(controller.snapshot()[0]).toEqual({
+      session: child("a"),
+      state: { desired: "closed", phase: "unavailable", lastError: "window-closed" },
+      manualReopenAttempts: 0,
+    })
+
     adapter.existsValue = true
-    scheduler.tick()
+    tracker.emit([child("a", "/updated")])
+    tracker.emit([{ ...child("a", "/updated"), status: "idle" }])
+    now = 100_000
+    scheduler.tick(100)
     await controller.ready()
-    expect(adapter.opens).toHaveLength(2)
-    adapter.existsValue = false
-    now = 2_000
-    scheduler.tick(10)
-    await controller.ready()
-    expect(adapter.opens).toHaveLength(2)
+    expect(adapter.opens).toHaveLength(1)
     expect(controller.snapshot()[0]?.state.lastError).toBe("window-closed")
     await controller.dispose()
   })
 
-  test("schedules manual-close replacement from slow exists completion and coalesces timer ticks", async () => {
+  test("slow exists false suppresses reopening immediately and coalesces timer ticks", async () => {
     let now = 0
     const existence = deferred<boolean>()
     const adapter = new FakeAdapter()
@@ -622,20 +624,16 @@ describe("presentation controller", () => {
     existence.resolve(false)
     await controller.ready()
     expect(adapter.opens).toHaveLength(1)
-    expect(controller.snapshot()[0]?.manualReopenAttempts).toBe(1)
-
-    now = 1_499
-    scheduler.tick()
+    expect(adapter.calls.filter((call) => call === "exists")).toHaveLength(1)
+    expect(controller.snapshot()[0]?.state.lastError).toBe("window-closed")
+    now = 100_000
+    scheduler.tick(100)
     await controller.ready()
     expect(adapter.opens).toHaveLength(1)
-    now = 1_500
-    scheduler.tick()
-    await controller.ready()
-    expect(adapter.opens).toHaveLength(2)
     await controller.dispose()
   })
 
-  test("handles immediate child exit with the same one-replacement policy", async () => {
+  test("immediate child exit never reopens", async () => {
     let now = 0
     const adapter = new FakeAdapter()
     adapter.existsValue = false
@@ -644,13 +642,53 @@ describe("presentation controller", () => {
     await controller.ready()
     scheduler.tick()
     await controller.ready()
-    now = 1_000
+    now = 100_000
+    scheduler.tick(100)
+    await controller.ready()
+    expect(adapter.opens).toHaveLength(1)
+    expect(controller.snapshot()[0]?.state.lastError).toBe("window-closed")
+    await controller.dispose()
+  })
+
+  test("membership deletion then re-add opens once for a fresh lifetime", async () => {
+    const adapter = new FakeAdapter()
+    const { tracker, scheduler, controller } = setup({ adapter })
+    tracker.emit([child("a")])
+    await controller.ready()
+    adapter.existsValue = false
     scheduler.tick()
     await controller.ready()
-    now = 2_000
-    scheduler.tick(5)
+    expect(adapter.opens).toHaveLength(1)
+
+    tracker.emit([])
     await controller.ready()
-    expect(adapter.opens).toHaveLength(2)
+    tracker.emit([child("a")])
+    await controller.ready()
+    expect(adapter.opens.map((item) => item.session.id)).toEqual(["a", "a"])
+    expect(controller.snapshot()[0]?.state.phase).toBe("open")
+    await controller.dispose()
+  })
+
+  test("coalesced deletion and re-add resets a pending exists false lifetime", async () => {
+    const existence = deferred<boolean>()
+    const adapter = new FakeAdapter()
+    adapter.existsImpl = () => existence.promise
+    const { tracker, scheduler, controller } = setup({ adapter })
+    tracker.emit([child("a")])
+    await controller.ready()
+
+    scheduler.tick()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    tracker.emit([])
+    tracker.emit([child("a")])
+    existence.resolve(false)
+    await controller.ready()
+
+    expect(adapter.opens.map((item) => item.session.id)).toEqual(["a", "a"])
+    expect(controller.snapshot()[0]).toMatchObject({
+      state: { desired: "open", phase: "open" },
+      manualReopenAttempts: 0,
+    })
     await controller.dispose()
   })
 
@@ -676,6 +714,11 @@ describe("presentation controller", () => {
     scheduler.tick()
     await controller.ready()
     expect(controller.snapshot()[0]?.state.lastError).toBe("exists-failed")
+    expect(controller.snapshot()[0]?.state.handle?.windowID).toBe(10)
+    adapter.failExists = false
+    scheduler.tick()
+    await controller.ready()
+    expect(controller.snapshot()[0]?.state.phase).toBe("open")
     adapter.failClose = true
     tracker.emit([])
     await controller.ready()

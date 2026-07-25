@@ -33,7 +33,11 @@ export type ControllerOptions = Readonly<{
 export type ControllerChildState = Readonly<{
   session: ChildSession
   state: PresentationState
-  manualReopenAttempts: number
+  /**
+   * @deprecated Retained for source compatibility. Close-means-close does not
+   * retry a missing presentation, so this value is always `0`.
+   */
+  readonly manualReopenAttempts: number
 }>
 
 const DEFAULT_HEALTH_TIMEOUT_MS = 2_000
@@ -50,7 +54,7 @@ type ManagedChild = {
   handle?: PresentationHandle
   lastError?: string
   nextAttemptAt: number
-  manualReopenAttempts: number
+  presentationClosed: boolean
 }
 
 function positiveSafeInteger(value: number, name: string): number {
@@ -89,6 +93,8 @@ export class PresentationController {
   readonly #unsubscribe: () => void
   #tail: Promise<void> = Promise.resolve()
   #pendingSnapshot?: SessionTrackerSnapshot
+  #acceptedSnapshotIDs = new Set<string>()
+  #pendingRemovalEdges = new Set<string>()
   #snapshotQueued = false
   #maintenanceQueued = false
   #accepting = true
@@ -115,6 +121,11 @@ export class PresentationController {
     if (!this.#accepting) return
     if (!Number.isSafeInteger(snapshot.revision) || snapshot.revision <= this.#acceptedRevision) return
     this.#acceptedRevision = snapshot.revision
+    const snapshotIDs = new Set(snapshot.sessions.map((session) => session.id))
+    for (const id of this.#acceptedSnapshotIDs) {
+      if (!snapshotIDs.has(id) && this.#children.has(id)) this.#pendingRemovalEdges.add(id)
+    }
+    this.#acceptedSnapshotIDs = snapshotIDs
     this.#pendingSnapshot = snapshot
     if (this.#snapshotQueued) return
     this.#snapshotQueued = true
@@ -136,12 +147,12 @@ export class PresentationController {
           Object.freeze({
             session: child.session,
             state: Object.freeze({
-              desired: "open" as const,
+              desired: child.presentationClosed ? "closed" as const : "open" as const,
               phase: child.phase,
               ...(child.handle ? { handle: child.handle } : {}),
               ...(child.lastError ? { lastError: child.lastError } : {}),
             }),
-            manualReopenAttempts: child.manualReopenAttempts,
+            manualReopenAttempts: 0,
           }),
         )
         .sort((left, right) => left.session.id.localeCompare(right.session.id)),
@@ -162,6 +173,7 @@ export class PresentationController {
     if (this.#disposePromise) return this.#disposePromise
     this.#accepting = false
     this.#pendingSnapshot = undefined
+    this.#pendingRemovalEdges.clear()
     this.#scheduler.clearInterval(this.#interval)
     this.#unsubscribe()
     for (const controller of this.#activeHealth) controller.abort()
@@ -205,6 +217,20 @@ export class PresentationController {
   async #applySnapshot(snapshot: SessionTrackerSnapshot): Promise<void> {
     if (!this.#accepting) return
     const desired = new Map(snapshot.sessions.map((session) => [session.id, session]))
+    const removalEdges = new Set(this.#pendingRemovalEdges)
+    this.#pendingRemovalEdges.clear()
+    // Snapshot delivery is revision-coalesced, so a deletion followed by a
+    // same-ID re-add can otherwise collapse into apparent continuous
+    // membership. Retained removal edges force a fresh controller record.
+    for (const id of removalEdges) {
+      const child = this.#children.get(id)
+      if (!child) continue
+      this.#children.delete(id)
+      if (child.handle) {
+        await this.#safeClose(child.handle)
+        if (!this.#accepting) return
+      }
+    }
     for (const [id, child] of [...this.#children]) {
       if (!this.#accepting) return
       const session = desired.get(id)
@@ -227,7 +253,7 @@ export class PresentationController {
         session,
         phase: "discovered",
         nextAttemptAt: 0,
-        manualReopenAttempts: 0,
+        presentationClosed: false,
       })
     }
     if (!this.#accepting) return
@@ -240,6 +266,7 @@ export class PresentationController {
   async #maintain(pollExisting = true): Promise<void> {
     for (const child of this.#children.values()) {
       if (!this.#accepting) return
+      if (child.presentationClosed) continue
       if (child.handle) {
         if (!pollExisting) continue
         let exists: boolean
@@ -258,14 +285,11 @@ export class PresentationController {
         child.handle = undefined
         child.phase = "unavailable"
         child.lastError = "window-closed"
-        if (child.manualReopenAttempts >= 1) {
-          child.nextAttemptAt = Number.POSITIVE_INFINITY
-          continue
-        }
-        child.manualReopenAttempts += 1
-        // exists() can consume most of a broker timeout. Delay replacement
-        // from actual detection completion, not from maintenance start.
-        child.nextAttemptAt = this.#now() + this.#intervalMs
+        // A successful open establishes this presentation lifetime. Its later
+        // absence means close means close, whether caused by a user action or
+        // an attach client that exited immediately. Membership removal and a
+        // later re-add creates a fresh record that can open normally.
+        child.presentationClosed = true
         continue
       }
       if (this.#now() < child.nextAttemptAt) continue

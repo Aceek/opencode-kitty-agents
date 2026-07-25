@@ -132,14 +132,16 @@ Completed 2026-07-24. The backend-neutral controller serializes desired
 membership and adapter operations, uses the live server URL for a credential-
 free bounded health probe immediately before each exact attach request,
 coalesces periodic retries and exact-ID existence polling, and performs bounded
-idempotent cleanup before adapter/broker disposal. Manual closure receives one
-delayed replacement per tracked child lifetime; a second closure remains
-unavailable to avoid an intentional-close or immediate-exit loop. The default
-disabled plugin creates no runtime resources. Review corrections synchronously
-filter unrelated plugin events, validate the complete OpenCode health JSON
-inside the probe deadline, schedule replacement from existence-query
-completion, isolate plugin tests from real broker discovery, and apply one
-absolute controller disposal deadline with contained best-effort continuation.
+idempotent cleanup before adapter/broker disposal. Once a successfully opened
+presentation is absent, close means close for that child membership lifetime:
+manual closure and immediate client exit never reopen it. A later authoritative
+removal and re-add creates a fresh record. Pre-handle availability, health, and
+open failures retain bounded interval retries; `exists` failures retain the
+handle and periodic probing. The default disabled plugin creates no runtime
+resources. Review corrections synchronously filter unrelated plugin events,
+validate the complete OpenCode health JSON inside the probe deadline, isolate
+plugin tests from real broker discovery, and apply one absolute controller
+disposal deadline with contained best-effort continuation.
 
 1. Connect tracker desired state to the adapter.
 2. Probe `ctx.serverUrl` immediately before attachment.
@@ -156,17 +158,30 @@ absolute controller disposal deadline with contained best-effort continuation.
 
 The first live run opened historical project children. ADR 0005 and its
 tracker/controller regressions corrected that scope failure. A later focused
-live rerun from the repository working directory opened exactly the two newly
-created child sessions and no historical children. Its three-column result was
-too narrow to accept as a readable multi-child arrangement, so placement design
-and focused verification remain required before broader lifecycle scenarios.
+live rerun from the repository working directory opened the orchestrator alone,
+with no historical children. Two simultaneous newly created child sessions
+opened exactly two readable, correctly positioned splits. Closing both once
+exposed the obsolete delayed replacement policy: both reappeared; closing them a
+second time left them closed. The user rejected any reopening after manual
+closure, so the controller now implements close-means-close behavior. Broader
+lifecycle scenarios remain required.
+
+The approved implementation policy treats `childBias` as the first child-region
+share only: the first child uses the configured orientation beside the exact
+orchestrator, while later children use the opposite orientation at bias `50`
+inside a deterministic successfully presented-child area. Provisional recovery
+and rollback IDs remain exact-ID cleanup-managed but are never placement
+anchors. See
+`docs/plans/readable-multi-child-placement.md`; the focused two-child placement
+gate is live-validated, while broader placement scenarios remain pending.
 
 1. Start OpenCode through the trusted Kitty launch path.
 2. Create one synchronous child session and one background child session.
 3. Verify each split attaches to the correct child session.
 4. Verify multiple children use deterministic placement.
 5. Verify focus behavior.
-6. Manually close one split and verify state reconciliation.
+6. Manually close one or more splits and verify they remain closed without any
+   replacement while membership remains present.
 7. Delete or complete a child and verify cleanup.
 8. Restart or close Kitty and verify graceful degradation.
 9. Stop OpenCode and verify all managed windows close without touching unrelated

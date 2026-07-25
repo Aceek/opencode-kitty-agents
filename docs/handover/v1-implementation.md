@@ -9,20 +9,20 @@ The prior orchestration was checkpointed into two commits:
 - `3b04844 feat: implement secure Kitty agent presentation`
 - `723303a docs: record V1 milestones and live verification`
 
-The worktree was clean after those commits. The focused Phase 5 rerun has now
+The worktree was clean after those commits. The focused Phase 5 rerun
 live-validated ADR 0005: a fresh orchestrator started from this repository did
 not open historical children, and exactly two newly created child sessions
-opened exactly two managed presentations. The first manual closure received the
-intended single replacement. The remaining user-visible defect is layout
-quality: three equal vertical columns are too narrow to be accepted as a
-readable multi-child arrangement.
+opened exactly two readable, correctly positioned managed presentations. Closing
+both presentations once exposed the obsolete delayed replacement policy: both
+reappeared. Closing them a second time kept them closed. The user explicitly
+rejected every automatic reopen after manual closure; controller work now uses
+the close-means-close policy.
 
 Begin the next orchestration by reading this handover and the journal in the
 mandatory order. Do not rerun a desktop test or change Kitty configuration
-before first researching, designing, and testing a deterministic readable
-multi-child placement policy. The next live test must start its source Kitty
-terminal in `/home/aceek/projects/opencode-kitty-agents`; starting from another
-directory does not load this repository's project plugin configuration.
+without explicit user confirmation. The next live test must start its source
+Kitty terminal in `/home/aceek/projects/opencode-kitty-agents`; starting from
+another directory does not load this repository's project plugin configuration.
 
 ## Resume This Orchestration
 
@@ -115,7 +115,7 @@ commit. Commit/push only if explicitly requested.
 - OpenCode and `@opencode-ai/plugin`: 1.18.4
 - Kitty: 0.47.4
 - Bun observed during tests: 1.3.14; package minimum remains 1.2
-- Latest completed check: 158 tests, 455 assertions, all source/test/Gate 0
+- Latest completed check: 169 tests, 493 assertions, all source/test/Gate 0
   TypeScript checks, and production build passed.
 - Latest `git diff --check`: passed.
 - No production broker process was active at the 2026-07-25 handoff.
@@ -193,8 +193,9 @@ presentation state. It:
   abort deadline;
 - retries ordinary unavailability at the configured interval;
 - polls exact managed IDs for manual closure;
-- permits one delayed automatic replacement after manual closure/immediate exit,
-  then stops to avoid reopen loops;
+- treats a missing successfully opened presentation as closed for the rest of
+  that child membership lifetime, without distinguishing manual closure from an
+  immediate attach-client exit;
 - handles deletion while open is pending and closes stale returned handles;
 - uses one global disposal deadline, stops new work, aborts health requests,
   clears state, best-effort closes known handles, and invokes adapter shutdown;
@@ -235,6 +236,10 @@ ADR 0004 superseded direct plugin ownership of the Kitty capability. Kitty
 - exact-ID Kitty commands with `--use-password=never`;
 - `splits` layout validation without automatic layout mutation;
 - exact returned-window-ID parsing and same-tab verification;
+- deterministic first child-region placement and largest-pane subdivision for
+  later children using only successful same-tab managed numeric IDs;
+- post-launch anchor validation and cleanup ownership for returned or recovered
+  IDs before rollback;
 - broker-owned recovery markers and conservative pre/post snapshots for launch
   failures, malformed output, and timeouts;
 - full non-mutating `ls` only when required to find a managed window moved to
@@ -298,7 +303,7 @@ The test-only implementation under `test/gate0/` proved live:
 - independent review finished with no unresolved high/medium finding before the
   later ADR 0005 live-scope correction sequence.
 
-### Phase 5: In Progress, Active-Root Scope Verified
+### Phase 5: In Progress, Focused Placement Live-Validated
 
 The production broker successfully opened a real OpenCode TUI in a separate
 Kitty terminal. A real prompt launched two agents, and their attached views were
@@ -309,10 +314,16 @@ windows for the two agents.
 
 That failure produced ADR 0005 and journals 19–24. A focused rerun from the
 repository working directory then opened exactly two newly created child
-presentations and no historical children. A first manual closure received the
-intended bounded replacement. The three-column arrangement was too narrow to
-accept as a readable multi-child layout, so Phase 5 remains in progress at the
-placement-design follow-up. See journal `2026-07-25-02-phase-5-active-root-live-rerun.md`.
+presentations and no historical children. The live placement rerun then confirmed
+the orchestrator opened alone and two simultaneous agents produced exactly two
+readable, correctly positioned child splits. Closing both once caused both to
+reappear under the old delayed replacement policy; closing them a second time
+kept them closed. The user rejected this behavior, so a missing handle after a
+successful open now remains closed for that membership lifetime. Broader
+  lifecycle scenarios remain. See journals
+  `2026-07-25-05-readable-multi-child-placement.md` and
+  `2026-07-25-06-live-placement-and-close-policy.md` for the implementation,
+  live result, and controller-policy correction.
 
 ## Temporary Kitty Test Configuration
 
@@ -339,9 +350,8 @@ send SIGTERM so their `finally` cleanup targets broker-owned numeric IDs.
 
 ## Exact Next Action
 
-Do not continue broad desktop scenarios first. Design and test a deterministic,
-readable multi-child placement policy without weakening exact-ID targeting or
-the active-root scope. Then rerun this focused sequence:
+The focused placement sequence is complete. Do not run further desktop scenarios
+without explicit user confirmation. Before any approved lifecycle sequence:
 
 1. Resume the recorded session and complete the mandatory reading order.
 2. Run:
@@ -352,7 +362,8 @@ the active-root scope. Then rerun this focused sequence:
    bun run check
    ```
 
-   Confirm the expected 161 tests/460 assertions or investigate any drift.
+   Confirm the full suite and all configured TypeScript checks pass, or
+   investigate any drift.
 3. Confirm no broker is active:
 
    ```bash
@@ -360,21 +371,12 @@ the active-root scope. Then rerun this focused sequence:
    ```
 
    Be aware that `pgrep -f` may match its own command shell; inspect output.
-4. In a user-approved separate Kitty terminal whose current directory is
-   `/home/aceek/projects/opencode-kitty-agents`, select the `splits` layout with
-   `Ctrl+Shift+F11`, then launch the production broker with `Ctrl+Shift+F12`.
-5. Before creating agents, confirm that the orchestrator opens alone with **no
-   historical narrow strips**.
-6. Ask the new orchestrator to launch exactly two fresh sub-agents that perform
-   harmless no-file work.
-7. Confirm exactly two readable child splits appear, both attached to the
-   correct sessions, and focus remains on the orchestrator.
-8. If historical children reappear or placement is not readable, stop only the
-   exact broker process, preserve non-sensitive evidence, journal it, and fix
-   scope or placement before any other Phase 5 scenario.
-
-Only after the focused two-child placement rerun passes should broader Phase 5
-continue.
+4. Run only the specifically approved scenario in a user-approved separate Kitty
+   terminal from `/home/aceek/projects/opencode-kitty-agents`.
+5. Confirm the orchestrator starts alone with no historical child strips and use
+   only freshly created child sessions.
+6. Preserve non-sensitive evidence and stop only the exact broker process if
+   scope, placement, or lifecycle behavior regresses.
 
 ## Remaining Phase 5 Scenarios
 
@@ -383,8 +385,10 @@ Run each against IDs created by the test, with best-effort cleanup:
 1. one synchronous and one background child attach to their exact sessions;
 2. multiple children use a deterministic readable arrangement;
 3. focus remains on the orchestrator under the default policy;
-4. manually close one child and verify one delayed replacement only;
-5. close it again and verify no reopen loop;
+4. manually close one or more children and verify close means close: no
+   replacement occurs while the authoritative membership remains present;
+5. remove a child from authoritative membership and later re-add it, verifying
+   the fresh lifetime may open once;
 6. move a managed child to another tab and verify existence/cleanup tracking;
 7. delete a child session through a test action outside the plugin and verify
    its window closes without deleting any other OpenCode session;
@@ -395,7 +399,8 @@ Run each against IDs created by the test, with best-effort cleanup:
     degradation;
 11. record exact sanitized outcomes and failures in a new journal entry.
 
-Do not promise multi-child placement publicly until these tests pass.
+Do not generalize the focused two-child placement result beyond its validated
+scenario until these remaining tests pass.
 
 ## Phase 6 After Live Success
 
@@ -437,8 +442,9 @@ Do not promise multi-child placement publicly until these tests pass.
 
 ## Known Risks And Intentional Limitations
 
-- ADR 0005's active-root and live-child scope is validated by the focused live
-  rerun; readable multi-child placement is not yet validated.
+- ADR 0005's active-root and live-child scope and the focused two-child readable
+  placement policy are live-validated. Broader lifecycle and placement scenarios
+  remain unverified.
 - An idle child created and completed before plugin startup is intentionally not
   presented unless it later emits live creation or appears non-idle. This avoids
   historical mass-open and must remain explicit.
