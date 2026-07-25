@@ -3,15 +3,16 @@ import { KittyBroker } from "../src/broker/core"
 import { ProcessExecutionError } from "../src/broker/runner"
 import type { KittyRunner } from "../src/broker/kitty"
 
-const originOnly = JSON.stringify([{ tabs: [{ layout: "splits", windows: [{ id: 12 }] }] }])
-const withChild = JSON.stringify([{ tabs: [{ layout: "splits", windows: [{ id: 12 }, { id: 19 }] }] }])
+const windowState = (id: number, lines = 40, columns = 100) => ({ id, lines, columns })
+const originOnly = JSON.stringify([{ tabs: [{ layout: "splits", windows: [windowState(12)] }] }])
+const withChild = JSON.stringify([{ tabs: [{ layout: "splits", windows: [windowState(12), windowState(19)] }] }])
 const recoveryToken = "test-recovery-token-123"
 const withRecoveryChild = JSON.stringify([
   {
     tabs: [
       {
         layout: "splits",
-        windows: [{ id: 12 }, { id: 19, user_vars: { opencode_kitty_agents_launch: recoveryToken } }],
+        windows: [windowState(12), { ...windowState(19), user_vars: { opencode_kitty_agents_launch: recoveryToken } }],
       },
     ],
   },
@@ -108,7 +109,7 @@ describe("Kitty broker core", () => {
       if (argv[3] === "ls" && argv.length === 4) {
         return {
           stdout: JSON.stringify([
-            { tabs: [{ layout: "splits", windows: [{ id: 12 }] }, { layout: "splits", windows: [{ id: 19 }] }] },
+            { tabs: [{ layout: "splits", windows: [windowState(12)] }, { layout: "splits", windows: [windowState(19)] }] },
           ]),
         }
       }
@@ -129,9 +130,250 @@ describe("Kitty broker core", () => {
     expect(await broker.request({ version: 1, operation: "close", windowID: 19 })).toMatchObject({ ok: true })
   })
 
+  test("uses sequential vertical split geometry to select four readable child-area anchors", async () => {
+    const calls: string[][] = []
+    const snapshots = [
+      [windowState(12, 50, 100)],
+      [windowState(12, 50, 60), windowState(19, 50, 40)],
+      [windowState(12, 50, 60), windowState(19, 50, 40)],
+      [windowState(12, 50, 60), windowState(19, 25, 40), windowState(20, 25, 40)],
+      [windowState(12, 50, 60), windowState(19, 25, 40), windowState(20, 25, 40)],
+      [windowState(12, 50, 60), windowState(19, 12, 40), windowState(21, 13, 40), windowState(20, 25, 40)],
+      [windowState(12, 50, 60), windowState(19, 12, 40), windowState(21, 13, 40), windowState(20, 25, 40)],
+      [windowState(12, 50, 60), windowState(19, 12, 40), windowState(21, 13, 40), windowState(20, 12, 40), windowState(22, 13, 40)],
+    ]
+    let launchIndex = 0
+    let snapshotIndex = 0
+    const runner: KittyRunner = async (argv) => {
+      calls.push([...argv])
+      if (argv[3] === "launch") return { stdout: String([19, 20, 21, 22][launchIndex++]) }
+      if (argv[3] !== "ls") return { stdout: "" }
+      return { stdout: JSON.stringify([{ tabs: [{ layout: "splits", windows: snapshots[snapshotIndex++] }] }]) }
+    }
+    const broker = new KittyBroker(brokerOptions, runner)
+    for (const sessionID of ["one", "two", "three", "four"]) {
+      expect(await broker.request({ version: 1, operation: "open", serverUrl: "http://localhost:4096/", directory: "/repo", sessionID, splitDirection: "vertical", childBias: 40, focusPolicy: "preserve" })).toMatchObject({ ok: true })
+    }
+    const launches = calls.filter((argv) => argv[3] === "launch")
+    expect(launches.map((argv) => [argv.find((value) => value.startsWith("--next-to=")), argv.find((value) => value.startsWith("--location=")), argv.find((value) => value.startsWith("--bias="))])).toEqual([
+      ["--next-to=id:12", "--location=vsplit", "--bias=40"],
+      ["--next-to=id:19", "--location=hsplit", "--bias=50"],
+      ["--next-to=id:19", "--location=hsplit", "--bias=50"],
+      ["--next-to=id:20", "--location=hsplit", "--bias=50"],
+    ])
+    expect(calls.filter((argv) => argv[3] === "focus-window")).toHaveLength(4)
+  })
+
+  test("uses sequential horizontal split geometry to select four readable child-area anchors", async () => {
+    const calls: string[][] = []
+    const snapshots = [
+      [windowState(12, 50, 100)],
+      [windowState(12, 30, 100), windowState(19, 20, 100)],
+      [windowState(12, 30, 100), windowState(19, 20, 100)],
+      [windowState(12, 30, 100), windowState(19, 20, 50), windowState(20, 20, 50)],
+      [windowState(12, 30, 100), windowState(19, 20, 50), windowState(20, 20, 50)],
+      [windowState(12, 30, 100), windowState(19, 20, 25), windowState(21, 20, 25), windowState(20, 20, 50)],
+      [windowState(12, 30, 100), windowState(19, 20, 25), windowState(21, 20, 25), windowState(20, 20, 50)],
+      [windowState(12, 30, 100), windowState(19, 20, 25), windowState(21, 20, 25), windowState(20, 20, 25), windowState(22, 20, 25)],
+    ]
+    let launchIndex = 0
+    let snapshotIndex = 0
+    const runner: KittyRunner = async (argv) => {
+      calls.push([...argv])
+      if (argv[3] === "launch") return { stdout: String([19, 20, 21, 22][launchIndex++]) }
+      return { stdout: JSON.stringify([{ tabs: [{ layout: "splits", windows: snapshots[snapshotIndex++] }] }]) }
+    }
+    const broker = new KittyBroker(brokerOptions, runner)
+    for (const sessionID of ["one", "two", "three", "four"]) {
+      expect(await broker.request({ version: 1, operation: "open", serverUrl: "http://localhost:4096/", directory: "/repo", sessionID, splitDirection: "horizontal", childBias: 40, focusPolicy: "child" })).toMatchObject({ ok: true })
+    }
+    const launches = calls.filter((argv) => argv[3] === "launch")
+    expect(launches.map((argv) => [argv.find((value) => value.startsWith("--next-to=")), argv.find((value) => value.startsWith("--location=")), argv.find((value) => value.startsWith("--bias="))])).toEqual([
+      ["--next-to=id:12", "--location=hsplit", "--bias=40"],
+      ["--next-to=id:19", "--location=vsplit", "--bias=50"],
+      ["--next-to=id:19", "--location=vsplit", "--bias=50"],
+      ["--next-to=id:20", "--location=vsplit", "--bias=50"],
+    ])
+  })
+
+  test("excludes closed or moved managed children from placement anchors while retaining lifecycle tracking", async () => {
+    const calls: string[][] = []
+    let launchCount = 0
+    let originSnapshots = 0
+    const runner: KittyRunner = async (argv) => {
+      calls.push([...argv])
+      if (argv[3] === "launch") return { stdout: String([19, 20][launchCount++]) }
+      if (argv[3] === "ls" && argv.length === 4) {
+        return { stdout: JSON.stringify([{ tabs: [{ layout: "splits", windows: [windowState(12)] }, { layout: "splits", windows: [windowState(19)] }] }]) }
+      }
+      originSnapshots += 1
+      return {
+        stdout:
+          originSnapshots === 1
+            ? originOnly
+            : originSnapshots === 2
+              ? withChild
+              : originSnapshots === 3
+                ? originOnly
+                : JSON.stringify([{ tabs: [{ layout: "splits", windows: [windowState(12), windowState(20)] }] }]),
+      }
+    }
+    const broker = new KittyBroker(brokerOptions, runner)
+    for (const sessionID of ["one", "two"]) {
+      await broker.request({
+        version: 1,
+        operation: "open",
+        serverUrl: "http://localhost:4096/",
+        directory: "/repo",
+        sessionID,
+        splitDirection: "vertical",
+        childBias: 40,
+        focusPolicy: "child",
+      })
+    }
+    expect(calls.filter((argv) => argv[3] === "launch").at(-1)).toContain("--next-to=id:12")
+    expect(await broker.request({ version: 1, operation: "exists", windowID: 19 })).toMatchObject({ exists: true })
+  })
+
+  test("falls back to the exact orchestrator when a known child is closed before the next placement", async () => {
+    const calls: string[][] = []
+    let launchCount = 0
+    let originSnapshots = 0
+    const runner: KittyRunner = async (argv) => {
+      calls.push([...argv])
+      if (argv[3] === "launch") return { stdout: String([19, 20][launchCount++]) }
+      if (argv[3] === "ls" && argv.length === 4) return { stdout: originOnly }
+      originSnapshots += 1
+      return {
+        stdout:
+          originSnapshots === 1
+            ? originOnly
+            : originSnapshots === 2
+              ? withChild
+              : originSnapshots === 3
+                ? originOnly
+                : JSON.stringify([{ tabs: [{ layout: "splits", windows: [windowState(12), windowState(20)] }] }]),
+      }
+    }
+    const broker = new KittyBroker(brokerOptions, runner)
+    for (const sessionID of ["one", "two"]) {
+      await broker.request({
+        version: 1,
+        operation: "open",
+        serverUrl: "http://localhost:4096/",
+        directory: "/repo",
+        sessionID,
+        splitDirection: "vertical",
+        childBias: 40,
+        focusPolicy: "child",
+      })
+    }
+    expect(calls.filter((argv) => argv[3] === "launch").at(-1)).toContain("--next-to=id:12")
+    expect(await broker.request({ version: 1, operation: "exists", windowID: 19 })).toMatchObject({ exists: false })
+  })
+
+  test("rolls back a launch whose selected anchor disappeared and retains its exact ID for shutdown after rollback failure", async () => {
+    const closes: string[][] = []
+    let launchCount = 0
+    const runner: KittyRunner = async (argv) => {
+      if (argv[3] === "launch") return { stdout: String([19, 20][launchCount++]) }
+      if (argv[3] === "close-window") {
+        closes.push([...argv])
+        if (argv.includes("--match=id:20") && closes.length === 1) throw new ProcessExecutionError("failed")
+        return { stdout: "" }
+      }
+      if (launchCount === 0) return { stdout: originOnly }
+      if (launchCount === 1) return { stdout: withChild }
+      return { stdout: JSON.stringify([{ tabs: [{ layout: "splits", windows: [windowState(12), windowState(20)] }] }]) }
+    }
+    const broker = new KittyBroker(brokerOptions, runner)
+    const open = (sessionID: string) =>
+      broker.request({
+        version: 1,
+        operation: "open",
+        serverUrl: "http://localhost:4096/",
+        directory: "/repo",
+        sessionID,
+        splitDirection: "vertical",
+        childBias: 40,
+        focusPolicy: "child",
+      })
+    expect(await open("one")).toMatchObject({ ok: true, windowID: 19 })
+    expect(await open("two")).toMatchObject({ ok: false, error: "kitty-failed" })
+    expect(closes[0]).toContain("--match=id:20")
+    await broker.request(request("shutdown"))
+    expect(closes.map((argv) => argv.find((value) => value.startsWith("--match=id:")))).toEqual([
+      "--match=id:20",
+      "--match=id:19",
+      "--match=id:20",
+    ])
+  })
+
+  test("keeps a recovered orphan cleanup-managed but never makes it a placement anchor", async () => {
+    const calls: string[][] = []
+    let launchCount = 0
+    let originSnapshots = 0
+    const recoveredState = JSON.stringify([
+      {
+        tabs: [
+          {
+            layout: "splits",
+            windows: [
+              windowState(12, 40, 60),
+              { ...windowState(19, 40, 40), user_vars: { opencode_kitty_agents_launch: recoveryToken } },
+            ],
+          },
+        ],
+      },
+    ])
+    const runner: KittyRunner = async (argv) => {
+      calls.push([...argv])
+      if (argv[3] === "launch") {
+        launchCount += 1
+        if (launchCount === 1) throw new ProcessExecutionError("timeout")
+        return { stdout: "20" }
+      }
+      if (argv[3] === "close-window" && argv.includes("--match=id:19") && calls.filter((call) => call[3] === "close-window").length === 1) {
+        throw new ProcessExecutionError("failed")
+      }
+      if (argv[3] === "ls") {
+        originSnapshots += 1
+        if (originSnapshots === 1) return { stdout: originOnly }
+        if (originSnapshots === 2 || originSnapshots === 3) return { stdout: recoveredState }
+        return {
+          stdout: JSON.stringify([
+            { tabs: [{ layout: "splits", windows: [windowState(12, 40, 60), windowState(19, 40, 40), windowState(20, 40, 20)] }] },
+          ]),
+        }
+      }
+      return { stdout: "" }
+    }
+    const broker = new KittyBroker(brokerOptions, runner)
+    const open = (sessionID: string) =>
+      broker.request({
+        version: 1,
+        operation: "open",
+        serverUrl: "http://localhost:4096/",
+        directory: "/repo",
+        sessionID,
+        splitDirection: "vertical",
+        childBias: 40,
+        focusPolicy: "child",
+      })
+    expect(await open("recovered")).toMatchObject({ ok: false, error: "timeout" })
+    expect(await open("presented")).toMatchObject({ ok: true, windowID: 20 })
+    expect(calls.filter((argv) => argv[3] === "launch").at(-1)).toEqual(expect.arrayContaining(["--next-to=id:12", "--location=vsplit", "--bias=40"]))
+    await broker.request(request("shutdown"))
+    expect(calls.filter((argv) => argv[3] === "close-window").map((argv) => argv.find((value) => value.startsWith("--match=id:")))).toEqual([
+      "--match=id:19",
+      "--match=id:19",
+      "--match=id:20",
+    ])
+  })
+
   test("rejects unknown IDs and reports unsupported origin layout without changing it", async () => {
     const runner: KittyRunner = async () => ({
-      stdout: JSON.stringify([{ tabs: [{ layout: "tall", windows: [{ id: 12 }] }] }]),
+      stdout: JSON.stringify([{ tabs: [{ layout: "tall", windows: [windowState(12)] }] }]),
     })
     const broker = new KittyBroker({ ...brokerOptions, opencodeExecutable: "opencode" }, runner)
     expect(await broker.request(request("availability"))).toEqual({
@@ -203,7 +445,7 @@ describe("Kitty broker core", () => {
       }
       return {
         stdout: launched
-          ? JSON.stringify([{ tabs: [{ layout: "splits", windows: [{ id: 12 }, { id: 19 }, { id: 20 }] }] }])
+          ? JSON.stringify([{ tabs: [{ layout: "splits", windows: [windowState(12), windowState(19), windowState(20)] }] }])
           : originOnly,
       }
     }
@@ -262,7 +504,7 @@ describe("Kitty broker core", () => {
         return { stdout: "" }
       }
       const current = childIDs.slice(0, launchIndex)
-      return { stdout: JSON.stringify([{ tabs: [{ layout: "splits", windows: [{ id: 12 }, ...current.map((id) => ({ id }))] }] }]) }
+      return { stdout: JSON.stringify([{ tabs: [{ layout: "splits", windows: [windowState(12), ...current.map((id) => windowState(id))] }] }]) }
     }
     const broker = new KittyBroker(brokerOptions, runner)
     for (const sessionID of ["one", "two"]) {
@@ -296,7 +538,7 @@ describe("Kitty broker core", () => {
         return { stdout: "" }
       }
       const current = childIDs.slice(0, launchIndex)
-      return { stdout: JSON.stringify([{ tabs: [{ layout: "splits", windows: [{ id: 12 }, ...current.map((id) => ({ id }))] }] }]) }
+      return { stdout: JSON.stringify([{ tabs: [{ layout: "splits", windows: [windowState(12), ...current.map((id) => windowState(id))] }] }]) }
     }
     const broker = new KittyBroker({ ...brokerOptions, shutdownTimeoutMs: 20 }, runner)
     for (const sessionID of ["one", "two"]) {

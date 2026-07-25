@@ -29,7 +29,19 @@ describe("broker timeout budget", () => {
       }
       return {
         stdout: JSON.stringify([
-          { tabs: [{ layout: "splits", windows: launched ? [{ id: 12 }, { id: 19 }] : [{ id: 12 }] }] },
+          {
+            tabs: [
+              {
+                layout: "splits",
+                windows: launched
+                  ? [
+                      { id: 12, lines: 40, columns: 60 },
+                      { id: 19, lines: 40, columns: 40 },
+                    ]
+                  : [{ id: 12, lines: 40, columns: 100 }],
+              },
+            ],
+          },
         ]),
       }
     }

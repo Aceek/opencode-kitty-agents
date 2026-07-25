@@ -9,7 +9,9 @@ import {
   originStateArgv,
   launchWithRecovery,
   requireOriginTab,
-  validateLaunchedWindow,
+  selectChildPlacement,
+  validateLaunchedWindowInTab,
+  validatePlacementAnchorInTab,
   windowExists,
   type OpenCodeEnvironment,
   type KittyRunner,
@@ -34,6 +36,7 @@ export class KittyBroker {
   readonly #shutdownTimeoutMs: number
   readonly #knownWindowIDs = new Set<number>()
   readonly #openWindowIDs = new Set<number>()
+  readonly #placementAnchorWindowIDs = new Set<number>()
   #disposed = false
   #tail: Promise<void> = Promise.resolve()
 
@@ -90,14 +93,22 @@ export class KittyBroker {
           let windowID: number | undefined
           const recoveryToken = this.#recoveryToken()
           try {
+            const placement = selectChildPlacement({
+              originWindowID: this.#originWindowID,
+              splitDirection: request.splitDirection,
+              childBias: request.childBias,
+              placementAnchorWindowIDs: this.#placementAnchorWindowIDs,
+              originTab: tab,
+            })
             const launchArgv = attachLaunchArgv({
               originWindowID: this.#originWindowID,
+              anchorWindowID: placement.anchorWindowID,
+              location: placement.location,
+              bias: placement.bias,
               opencodeExecutable: this.#opencodeExecutable,
               serverUrl: request.serverUrl,
               directory: request.directory,
               sessionID: request.sessionID,
-              splitDirection: request.splitDirection,
-              childBias: request.childBias,
               focusPolicy: request.focusPolicy,
               environment: this.#openCodeEnvironment,
               recoveryToken,
@@ -109,24 +120,30 @@ export class KittyBroker {
               before: tab,
               originWindowID: this.#originWindowID,
               recoveryToken,
+              onRecoveredWindowID: (recoveredWindowID) => {
+                this.#knownWindowIDs.add(recoveredWindowID)
+                this.#openWindowIDs.add(recoveredWindowID)
+              },
               ...(this.#kittenExecutable === undefined ? {} : { kittenExecutable: this.#kittenExecutable }),
             })
-            validateLaunchedWindow(
+            this.#knownWindowIDs.add(windowID)
+            this.#openWindowIDs.add(windowID)
+            const after = requireOriginTab(
               (await this.#runner(originStateArgv(this.#originWindowID, this.#kittenExecutable))).stdout,
               this.#originWindowID,
-              windowID,
             )
+            validatePlacementAnchorInTab(after, placement.anchorWindowID)
+            validateLaunchedWindowInTab(after, this.#originWindowID, windowID)
             if (request.focusPolicy === "preserve") {
               await this.#runner(focusWindowArgv(this.#originWindowID, this.#kittenExecutable))
             }
+            this.#placementAnchorWindowIDs.add(windowID)
           } catch (error) {
             if (windowID !== undefined) {
               await this.#runner(closeWindowArgv(windowID, this.#kittenExecutable)).catch(() => undefined)
             }
             throw error
           }
-          this.#knownWindowIDs.add(windowID)
-          this.#openWindowIDs.add(windowID)
           return { version: BROKER_PROTOCOL_VERSION, operation: "open", ok: true, windowID }
         }
         case "exists": {
@@ -136,6 +153,7 @@ export class KittyBroker {
             request.windowID,
           )
           if (!exists) this.#openWindowIDs.delete(request.windowID)
+          if (!exists) this.#placementAnchorWindowIDs.delete(request.windowID)
           return { version: BROKER_PROTOCOL_VERSION, operation: "exists", ok: true, exists }
         }
         case "focus":
@@ -146,12 +164,14 @@ export class KittyBroker {
           if (!this.#knownWindowIDs.has(request.windowID)) return this.#failure("close", "unknown-window")
           await this.#runner(closeWindowArgv(request.windowID, this.#kittenExecutable))
           this.#openWindowIDs.delete(request.windowID)
+          this.#placementAnchorWindowIDs.delete(request.windowID)
           return { version: BROKER_PROTOCOL_VERSION, operation: "close", ok: true }
         case "shutdown":
           if (!this.#disposed) {
             this.#disposed = true
             await this.#closeManagedWindowsBounded([...this.#openWindowIDs])
             this.#openWindowIDs.clear()
+            this.#placementAnchorWindowIDs.clear()
           }
           return { version: BROKER_PROTOCOL_VERSION, operation: "shutdown", ok: true }
       }

@@ -99,6 +99,9 @@ async function main(): Promise<void> {
       before: originTab,
       originWindowID: startup.mappingOriginWindowID,
       recoveryToken,
+      onRecoveredWindowID: (recoveredWindowID) => {
+        orchestratorWindowID = recoveredWindowID
+      },
     })
     shutdown.throwIfRequested()
     validateLaunchedWindow(

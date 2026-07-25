@@ -142,28 +142,32 @@ export function attachArgv(input: {
 
 export function attachLaunchArgv(input: {
   originWindowID: number
+  anchorWindowID: number
+  location: KittySplitLocation
+  bias: number
   opencodeExecutable: string
   serverUrl: string
   directory: string
   sessionID: string
-  splitDirection: SplitDirection
-  childBias: number
   focusPolicy: FocusPolicy
   environment: OpenCodeEnvironment
   recoveryToken: string
   kittenExecutable?: string
 }): string[] {
   numericID(input.originWindowID)
-  if (!Number.isFinite(input.childBias) || input.childBias < 1 || input.childBias > 99) throw new KittyStateError()
+  const anchor = numericID(input.anchorWindowID)
+  if ((input.location !== "vsplit" && input.location !== "hsplit") || !Number.isFinite(input.bias) || input.bias < 1 || input.bias > 99) {
+    throw new KittyStateError()
+  }
   if (!/^[A-Za-z0-9_-]{16,128}$/.test(input.recoveryToken)) throw new KittyStateError()
   const origin = input.originWindowID
   return [
     ...base(input.kittenExecutable ?? DEFAULT_KITTEN_EXECUTABLE, "launch"),
     `--match=window_id:${origin}`,
     `--source-window=id:${origin}`,
-    `--next-to=id:${origin}`,
-    `--location=${input.splitDirection === "vertical" ? "vsplit" : "hsplit"}`,
-    `--bias=${input.childBias}`,
+    `--next-to=id:${anchor}`,
+    `--location=${input.location}`,
+    `--bias=${input.bias}`,
     ...(input.focusPolicy === "preserve" ? ["--keep-focus"] : []),
     `--var=${RECOVERY_VARIABLE}=${input.recoveryToken}`,
     `--cwd=${input.directory}`,
@@ -205,8 +209,11 @@ export function parseLaunchWindowID(stdout: string): number {
   return id
 }
 
-export type KittyTab = Readonly<{ layout: string; windowIDs: readonly number[] }>
-type ParsedKittyWindow = Readonly<{ id: number; recoveryToken?: string }>
+export type KittyWindow = Readonly<{ id: number; lines: number; columns: number }>
+export type KittyTab = Readonly<{ layout: string; windowIDs: readonly number[]; windows: readonly KittyWindow[] }>
+export type KittySplitLocation = "vsplit" | "hsplit"
+export type ChildPlacement = Readonly<{ anchorWindowID: number; location: KittySplitLocation; bias: number }>
+type ParsedKittyWindow = Readonly<{ id: number; lines: number; columns: number; recoveryToken?: string }>
 type ParsedKittyTab = Readonly<{ layout: string; windows: readonly ParsedKittyWindow[] }>
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -227,7 +234,15 @@ function parseKittyState(raw: string): readonly ParsedKittyTab[] {
     for (const tab of osWindow.tabs) {
       if (!isRecord(tab) || typeof tab.layout !== "string" || !Array.isArray(tab.windows)) throw new KittyStateError()
       const windows = tab.windows.map((window): ParsedKittyWindow => {
-        if (!isRecord(window) || !Number.isSafeInteger(window.id) || (window.id as number) < 1) {
+        if (
+          !isRecord(window) ||
+          !Number.isSafeInteger(window.id) ||
+          (window.id as number) < 1 ||
+          !Number.isSafeInteger(window.lines) ||
+          (window.lines as number) < 1 ||
+          !Number.isSafeInteger(window.columns) ||
+          (window.columns as number) < 1
+        ) {
           throw new KittyStateError()
         }
         const userVars = window.user_vars
@@ -236,6 +251,8 @@ function parseKittyState(raw: string): readonly ParsedKittyTab[] {
         if (recoveryToken !== undefined && typeof recoveryToken !== "string") throw new KittyStateError()
         return {
           id: window.id as number,
+          lines: window.lines as number,
+          columns: window.columns as number,
           ...(recoveryToken === undefined ? {} : { recoveryToken }),
         }
       })
@@ -248,7 +265,51 @@ function parseKittyState(raw: string): readonly ParsedKittyTab[] {
 }
 
 export function parseKittyTabs(raw: string): readonly KittyTab[] {
-  return parseKittyState(raw).map((tab) => ({ layout: tab.layout, windowIDs: tab.windows.map((window) => window.id) }))
+  return parseKittyState(raw).map((tab) => ({
+    layout: tab.layout,
+    windowIDs: tab.windows.map((window) => window.id),
+    windows: tab.windows.map(({ id, lines, columns }) => ({ id, lines, columns })),
+  }))
+}
+
+/** Select an anchor from successfully presented children in a sanitized origin snapshot. */
+export function selectChildPlacement(input: {
+  originWindowID: number
+  splitDirection: SplitDirection
+  childBias: number
+  placementAnchorWindowIDs: ReadonlySet<number>
+  originTab: KittyTab
+}): ChildPlacement {
+  const origin = numericID(input.originWindowID)
+  if (!Number.isFinite(input.childBias) || input.childBias < 1 || input.childBias > 99) throw new KittyStateError()
+  if (input.splitDirection !== "vertical" && input.splitDirection !== "horizontal") throw new KittyStateError()
+
+  const candidates = input.originTab.windows.filter(
+    (window) => window.id !== origin && input.placementAnchorWindowIDs.has(window.id),
+  )
+  if (candidates.length === 0) {
+    return {
+      anchorWindowID: origin,
+      location: input.splitDirection === "vertical" ? "vsplit" : "hsplit",
+      bias: input.childBias,
+    }
+  }
+
+  const selected = candidates.reduce((best, candidate) => {
+    const primary = input.splitDirection === "vertical" ? candidate.lines : candidate.columns
+    const bestPrimary = input.splitDirection === "vertical" ? best.lines : best.columns
+    const secondary = input.splitDirection === "vertical" ? candidate.columns : candidate.lines
+    const bestSecondary = input.splitDirection === "vertical" ? best.columns : best.lines
+    if (primary > bestPrimary || (primary === bestPrimary && (secondary > bestSecondary || (secondary === bestSecondary && candidate.id < best.id)))) {
+      return candidate
+    }
+    return best
+  })
+  return {
+    anchorWindowID: selected.id,
+    location: input.splitDirection === "vertical" ? "hsplit" : "vsplit",
+    bias: 50,
+  }
 }
 
 export function requireOriginTab(raw: string, originWindowID: number): KittyTab {
@@ -294,6 +355,7 @@ export async function launchWithRecovery(input: {
   before: KittyTab
   originWindowID: number
   recoveryToken: string
+  onRecoveredWindowID?: (windowID: number) => void
   kittenExecutable?: string
 }): Promise<number> {
   let result: ProcessResult
@@ -316,6 +378,7 @@ async function recoverFailedLaunch(input: {
   before: KittyTab
   originWindowID: number
   recoveryToken: string
+  onRecoveredWindowID?: (windowID: number) => void
   kittenExecutable?: string
 }): Promise<void> {
   try {
@@ -326,7 +389,14 @@ async function recoverFailedLaunch(input: {
       input.originWindowID,
       input.recoveryToken,
     )
-    if (candidate !== undefined) await input.runner(closeWindowArgv(candidate, input.kittenExecutable))
+    if (candidate !== undefined) {
+      try {
+        input.onRecoveredWindowID?.(candidate)
+      } catch {
+        // Recovery reporting cannot replace the original launch failure or suppress exact-ID close.
+      }
+      await input.runner(closeWindowArgv(candidate, input.kittenExecutable))
+    }
   } catch {
     // Best effort only: never act on missing or ambiguous state.
   }
@@ -334,9 +404,20 @@ async function recoverFailedLaunch(input: {
 
 export function validateLaunchedWindow(raw: string, originWindowID: number, childWindowID: number): void {
   const tab = requireOriginTab(raw, originWindowID)
+  validateLaunchedWindowInTab(tab, originWindowID, childWindowID)
+}
+
+export function validateLaunchedWindowInTab(tab: KittyTab, originWindowID: number, childWindowID: number): void {
+  numericID(originWindowID)
+  numericID(childWindowID)
   if (!tab.windowIDs.includes(childWindowID) || childWindowID === originWindowID) {
     throw new KittyStateError("launched window unavailable")
   }
+}
+
+export function validatePlacementAnchorInTab(tab: KittyTab, anchorWindowID: number): void {
+  numericID(anchorWindowID)
+  if (!tab.windowIDs.includes(anchorWindowID)) throw new KittyStateError("placement anchor unavailable")
 }
 
 export function kittyFailureCode(error: unknown): "timeout" | "kitty-failed" {

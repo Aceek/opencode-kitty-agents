@@ -15,6 +15,7 @@ import {
   orchestratorLaunchArgv,
   recoverableAddedWindowID,
   requireOriginTab,
+  selectChildPlacement,
   validateLaunchedWindow,
   windowExists,
 } from "../src/broker/kitty"
@@ -23,7 +24,15 @@ import { ProcessExecutionError } from "../src/broker/runner"
 const kittyTree = JSON.stringify([
   {
     ignored: "value",
-    tabs: [{ layout: "splits", windows: [{ id: 12, title: "origin" }, { id: 19, env: { OMIT: "secret" } }] }],
+    tabs: [
+      {
+        layout: "splits",
+        windows: [
+          { id: 12, lines: 40, columns: 100, title: "origin" },
+          { id: 19, lines: 40, columns: 100, env: { OMIT: "secret" } },
+        ],
+      },
+    ],
   },
 ])
 
@@ -74,12 +83,13 @@ describe("Kitty command boundary", () => {
     expect(
       attachLaunchArgv({
         originWindowID: 12,
+        anchorWindowID: 19,
+        location: "vsplit",
+        bias: 50,
         opencodeExecutable: "/opt/opencode",
         serverUrl: "http://127.0.0.1:4096/",
         directory: "/repo with spaces",
         sessionID: "ses_1",
-        splitDirection: "horizontal",
-        childBias: 35.5,
         focusPolicy: "preserve",
         environment: ["HOME=/home/test", "XDG_RUNTIME_DIR=/run/user/1000"],
         recoveryToken: "test-recovery-token-123",
@@ -91,9 +101,9 @@ describe("Kitty command boundary", () => {
       "launch",
       "--match=window_id:12",
       "--source-window=id:12",
-      "--next-to=id:12",
-      "--location=hsplit",
-      "--bias=35.5",
+      "--next-to=id:19",
+      "--location=vsplit",
+      "--bias=50",
       "--keep-focus",
       "--var=opencode_kitty_agents_launch=test-recovery-token-123",
       "--cwd=/repo with spaces",
@@ -166,14 +176,30 @@ describe("Kitty command boundary", () => {
     ])
   })
 
-  test("parses only layout and numeric window IDs", () => {
-    expect(parseKittyTabs(kittyTree)).toEqual([{ layout: "splits", windowIDs: [12, 19] }])
+  test("parses only layout, numeric IDs, and positive dimensions", () => {
+    expect(parseKittyTabs(kittyTree)).toEqual([
+      {
+        layout: "splits",
+        windowIDs: [12, 19],
+        windows: [
+          { id: 12, lines: 40, columns: 100 },
+          { id: 19, lines: 40, columns: 100 },
+        ],
+      },
+    ])
     expect(requireOriginTab(kittyTree, 12).layout).toBe("splits")
     expect(windowExists(kittyTree, 19)).toBe(true)
     expect(windowExists("[]", 19)).toBe(false)
     expect(() =>
       windowExists(
-        JSON.stringify([{ tabs: [{ layout: "splits", windows: [{ id: 19 }] }, { layout: "splits", windows: [{ id: 19 }] }] }]),
+        JSON.stringify([
+          {
+            tabs: [
+              { layout: "splits", windows: [{ id: 19, lines: 40, columns: 100 }] },
+              { layout: "splits", windows: [{ id: 19, lines: 40, columns: 100 }] },
+            ],
+          },
+        ]),
         19,
       ),
     ).toThrow("ambiguous window state")
@@ -186,6 +212,8 @@ describe("Kitty command boundary", () => {
     '[{"tabs":{}}]',
     '[{"tabs":[{"layout":"splits","windows":[{"id":"12"}]}]}]',
     '[{"tabs":[{"layout":"splits","windows":[{"id":12},{"id":12}]}]}]',
+    '[{"tabs":[{"layout":"splits","windows":[{"id":12,"lines":0,"columns":100}]}]}]',
+    '[{"tabs":[{"layout":"splits","windows":[{"id":12,"lines":40,"columns":1.5}]}]}]',
   ])("rejects malformed or ambiguous Kitty state %#", (raw) => {
     expect(() => parseKittyTabs(raw)).toThrow("invalid kitty state")
   })
@@ -196,6 +224,52 @@ describe("Kitty command boundary", () => {
     expect(() => parseLaunchWindowID("0")).toThrow("invalid launch response")
     expect(() => requireOriginTab("[]", 12)).toThrow("origin unavailable")
     expect(() => validateLaunchedWindow(kittyTree, 12, 12)).toThrow("launched window unavailable")
+  })
+
+  test("selects readable managed child anchors with deterministic directional tie-breakers", () => {
+    const originTab = requireOriginTab(
+      JSON.stringify([
+        {
+          tabs: [
+            {
+              layout: "splits",
+              windows: [
+                { id: 12, lines: 50, columns: 100 },
+                { id: 19, lines: 30, columns: 120 },
+                { id: 20, lines: 40, columns: 80 },
+                { id: 21, lines: 40, columns: 90 },
+                { id: 22, lines: 20, columns: 200 },
+                { id: 23, lines: 40, columns: 90 },
+                { id: 24, lines: 35, columns: 120 },
+                { id: 25, lines: 35, columns: 120 },
+              ],
+            },
+          ],
+        },
+      ]),
+      12,
+    )
+    const placementAnchors = new Set([19, 20, 21, 23, 24, 25])
+    expect(selectChildPlacement({ originWindowID: 12, splitDirection: "vertical", childBias: 40, placementAnchorWindowIDs: placementAnchors, originTab })).toEqual({
+      anchorWindowID: 21,
+      location: "hsplit",
+      bias: 50,
+    })
+    expect(selectChildPlacement({ originWindowID: 12, splitDirection: "horizontal", childBias: 40, placementAnchorWindowIDs: placementAnchors, originTab })).toEqual({
+      anchorWindowID: 24,
+      location: "vsplit",
+      bias: 50,
+    })
+    expect(selectChildPlacement({ originWindowID: 12, splitDirection: "vertical", childBias: 37, placementAnchorWindowIDs: new Set(), originTab })).toEqual({
+      anchorWindowID: 12,
+      location: "vsplit",
+      bias: 37,
+    })
+    expect(selectChildPlacement({ originWindowID: 12, splitDirection: "horizontal", childBias: 37, placementAnchorWindowIDs: new Set(), originTab })).toEqual({
+      anchorWindowID: 12,
+      location: "hsplit",
+      bias: 37,
+    })
   })
 
   test("recovers only one unambiguous numeric addition with no pre-existing removal", () => {
@@ -209,9 +283,9 @@ describe("Kitty command boundary", () => {
               {
                 layout: "splits",
                 windows: [
-                  { id: 12 },
-                  { id: 19 },
-                  { id: 20, user_vars: { opencode_kitty_agents_launch: "test-recovery-token-123" } },
+                  { id: 12, lines: 40, columns: 100 },
+                  { id: 19, lines: 40, columns: 100 },
+                  { id: 20, lines: 40, columns: 100, user_vars: { opencode_kitty_agents_launch: "test-recovery-token-123" } },
                 ],
               },
             ],
@@ -224,7 +298,7 @@ describe("Kitty command boundary", () => {
     expect(
       recoverableAddedWindowID(
         before,
-        JSON.stringify([{ tabs: [{ layout: "splits", windows: [{ id: 12 }, { id: 20 }, { id: 21 }] }] }]),
+        JSON.stringify([{ tabs: [{ layout: "splits", windows: [{ id: 12, lines: 40, columns: 100 }, { id: 20, lines: 40, columns: 100 }, { id: 21, lines: 40, columns: 100 }] }] }]),
         12,
         "test-recovery-token-123",
       ),
@@ -232,7 +306,7 @@ describe("Kitty command boundary", () => {
     expect(
       recoverableAddedWindowID(
         before,
-        JSON.stringify([{ tabs: [{ layout: "splits", windows: [{ id: 12 }, { id: 20 }] }] }]),
+        JSON.stringify([{ tabs: [{ layout: "splits", windows: [{ id: 12, lines: 40, columns: 100 }, { id: 20, lines: 40, columns: 100 }] }] }]),
         12,
         "test-recovery-token-123",
       ),
@@ -240,7 +314,7 @@ describe("Kitty command boundary", () => {
   })
 
   test("the shared orchestrator launch path recovers after runner timeout", async () => {
-    const before = requireOriginTab(JSON.stringify([{ tabs: [{ layout: "splits", windows: [{ id: 12 }] }] }]), 12)
+    const before = requireOriginTab(JSON.stringify([{ tabs: [{ layout: "splits", windows: [{ id: 12, lines: 40, columns: 100 }] }] }]), 12)
     const launchArgv = orchestratorLaunchArgv({
       mappingOriginWindowID: 12,
       opencodeExecutable: "/trusted/opencode",
@@ -250,6 +324,7 @@ describe("Kitty command boundary", () => {
     })
     const calls: string[][] = []
     let attempted = false
+    let recoveredWindowID: number | undefined
     const runner = async (argv: readonly string[]) => {
       calls.push([...argv])
       if (!attempted) {
@@ -264,8 +339,8 @@ describe("Kitty command boundary", () => {
                 {
                   layout: "splits",
                   windows: [
-                    { id: 12 },
-                    { id: 22, user_vars: { opencode_kitty_agents_launch: "test-recovery-token-123" } },
+                    { id: 12, lines: 40, columns: 100 },
+                    { id: 22, lines: 40, columns: 100, user_vars: { opencode_kitty_agents_launch: "test-recovery-token-123" } },
                   ],
                 },
               ],
@@ -273,6 +348,7 @@ describe("Kitty command boundary", () => {
           ]),
         }
       }
+      if (argv[3] === "close-window") expect(recoveredWindowID).toBe(22)
       return { stdout: "" }
     }
     await expect(
@@ -282,9 +358,13 @@ describe("Kitty command boundary", () => {
         before,
         originWindowID: 12,
         recoveryToken: "test-recovery-token-123",
+        onRecoveredWindowID: (windowID) => {
+          recoveredWindowID = windowID
+        },
       }),
     ).rejects.toMatchObject({ code: "timeout" })
     expect(calls.filter((argv) => argv[3] === "close-window")).toHaveLength(1)
+    expect(recoveredWindowID).toBe(22)
   })
 
   test("checks descriptor metadata without returning or exposing its value", () => {
