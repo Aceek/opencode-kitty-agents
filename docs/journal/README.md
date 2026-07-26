@@ -79,3 +79,6 @@ handoffs, and recovery after interruption.
 - `2026-07-25-06-live-placement-and-close-policy.md`
 - `2026-07-26-01-single-shortcut-local-launcher.md`
 - `2026-07-26-02-launcher-bun-path-correction.md`
+- `2026-07-26-03-launcher-combine-delimiter-correction.md`
+- `2026-07-26-04-launcher-key-conflict-correction.md`
+- `2026-07-26-05-close-launcher-window.md`

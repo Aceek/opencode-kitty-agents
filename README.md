@@ -262,7 +262,7 @@ Add this one mapping to `~/.config/kitty/kitty.conf`, using the executable path
 printed by `command -v opencode-kitty-agents-broker` after the local link:
 
 ```conf
-map ctrl+shift+o combine : goto_layout splits : launch --type=background --env=PATH=/home/aceek/.bun/bin:/usr/local/bin:/usr/bin:/bin --allow-remote-control --remote-control-password '!' --remote-control-password '"" ls launch focus-window close-window' /home/aceek/.npm-global/bin/opencode-kitty-agents-broker @active-kitty-window-id
+map ctrl+shift+f12 combine | goto_layout splits | launch --type=background --env=PATH=/home/aceek/.bun/bin:/usr/local/bin:/usr/bin:/bin --allow-remote-control --remote-control-password '!' --remote-control-password '"" ls launch focus-window close-window' /home/aceek/.npm-global/bin/opencode-kitty-agents-broker @active-kitty-window-id
 ```
 
 Reload Kitty after the edit:
@@ -271,10 +271,12 @@ Reload Kitty after the edit:
 kill -USR1 "$KITTY_PID"
 ```
 
-From a Kitty tab in the project directory, press **Ctrl+Shift+O**. The shortcut
+From a Kitty tab in the project directory, press **Ctrl+Shift+F12**. The shortcut
 deliberately changes that tab to `splits`, starts the OpenCode orchestrator,
-and permits the plugin to present eligible immediate child sessions. A normal
-`opencode` command cannot acquire this private Kitty capability after startup.
+then closes the source terminal after the orchestrator is validated and the
+broker is ready. It permits the plugin to present eligible immediate child
+sessions. A normal `opencode` command cannot acquire this private Kitty
+capability after startup.
 
 The mapping grants no global remote control. The background broker receives a
 window-local capability restricted to `ls`, `launch`, `focus-window`, and

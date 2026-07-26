@@ -31,7 +31,11 @@ the exact existing command allowlist (`ls`, `launch`, `focus-window`, and
 
 - The user deliberately accepts that invoking the launcher changes the current
   tab to `splits`.
-- The two temporary F11/F12 mappings are replaced by one documented shortcut.
+- The two temporary F11/F12 mappings are replaced by one documented
+  `Ctrl+Shift+F12` shortcut.
+- After it validates the orchestrator and readies the private broker, the
+  launcher closes the exact source terminal. A failed close leaves that terminal
+  intact rather than failing the orchestrator startup.
 - Starting a normal, already-running `opencode` process remains unsupported:
   it cannot acquire the private Kitty capability retroactively.
 - No new broker protocol operation, Kitty authorization, persisted capability,

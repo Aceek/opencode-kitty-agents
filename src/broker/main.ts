@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto"
 import { join } from "node:path"
 import { KittyBroker } from "./core"
 import { validateRuntimeDirectory } from "./endpoint"
+import { closeLauncherWindow } from "./launcher"
 import {
   closeWindowArgv,
   createKittyRunner,
@@ -118,6 +119,10 @@ async function main(): Promise<void> {
       runner,
     )
     resolveBroker(broker)
+    // The source window is an explicit launcher, not an orchestrator view. Only
+    // close it after the returned orchestrator ID was validated and the broker
+    // is ready to serve the plugin. Failure leaves the user's launcher intact.
+    await closeLauncherWindow(runner, startup.mappingOriginWindowID)
     await server.closed
   } finally {
     process.off("SIGINT", stop)

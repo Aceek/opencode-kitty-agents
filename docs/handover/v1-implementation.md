@@ -331,14 +331,16 @@ The user-approved local launcher is installed in
 `/home/aceek/.config/kitty/kitty.conf`:
 
 ```conf
-map ctrl+shift+o combine : goto_layout splits : launch --type=background --env=PATH=/home/aceek/.bun/bin:/usr/local/bin:/usr/bin:/bin --allow-remote-control --remote-control-password '!' --remote-control-password '"" ls launch focus-window close-window' /home/aceek/.npm-global/bin/opencode-kitty-agents-broker @active-kitty-window-id
+map ctrl+shift+f12 combine | goto_layout splits | launch --type=background --env=PATH=/home/aceek/.bun/bin:/usr/local/bin:/usr/bin:/bin --allow-remote-control --remote-control-password '!' --remote-control-password '"" ls launch focus-window close-window' /home/aceek/.npm-global/bin/opencode-kitty-agents-broker @active-kitty-window-id
 ```
 
 It is a local V1 setup, not a published release guarantee. Global remote
 control remains disabled. Do not broaden the allowlist. Keep the `!` policy
 that disables global password fallthrough. ADR 0006 limits the automatic
 `splits` selection to this explicit user-invoked mapping; the broker remains
-unable to change layouts.
+unable to change layouts. After successful orchestrator validation and broker
+readiness, the broker closes the exact mapping source terminal so the tab keeps
+only the orchestrator and its managed child views.
 
 The user explicitly used a separate Kitty terminal/window for live testing.
 Coordinate before causing visible desktop changes. If the mapping is removed,

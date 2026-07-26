@@ -20,7 +20,8 @@ sessions through the existing private broker.
 1. Keep the broker command allowlist unchanged: `ls`, `launch`,
    `focus-window`, and `close-window` only.
 2. Replace the temporary `Ctrl+Shift+F11` and `Ctrl+Shift+F12` mappings with
-   one `Ctrl+Shift+O` `combine` mapping. It selects `splits` and launches the
+   one `Ctrl+Shift+F12` `combine` mapping. Use `|` as its delimiter because the
+   broker's explicit `PATH` contains `:`. It selects `splits` and launches the
    package-owned broker as a Kitty background process.
 3. Point the mapping to the locally linked `opencode-kitty-agents-broker`
    executable, rather than a repository `dist` file. Give that background
